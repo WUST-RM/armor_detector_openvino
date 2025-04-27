@@ -1,0 +1,30 @@
+armor_detector_openvino:
+  ros__parameters:
+    use_sim_time: false
+    use_sensor_data_qos: true
+    debug_mode: true
+    detect_color: 1
+
+    detector:
+      camera_name: 'front_industrial_camera'
+      subscribe_compressed: false
+
+      # Model
+      model_path: $(find-pkg-share armor_detector_openvino)/model/opt-1208-001.onnx
+      device_type: 'GPU'
+      confidence_threshold: 0.25
+      top_k: 128
+      nms_threshold: 0.3
+
+      max_infer_running: 4
+
+    light:
+      expand_ratio_w: 2.0
+      expand_ratio_h: 1.5
+
+      binary_threshold: 85
+      
+      min_ratio: 0.0001
+      max_ratio: 0.45
+      max_angle: 40.0
+     
