@@ -362,7 +362,7 @@ void DetectorOpenVino::extractNumberImage(const cv::Mat & src, ArmorObject & arm
   cv::Mat litroi = src(expanded_rect).clone();
   cv::Mat litroi_color = src(expanded_rect).clone();
   cv::cvtColor(litroi, litroi, cv::COLOR_RGB2GRAY);
-  cv::threshold(litroi, litroi, 85, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+  cv::threshold(litroi, litroi, binary_thres_, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
 
   // === 装甲板透视变换 ===
