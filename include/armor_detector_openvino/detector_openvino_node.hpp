@@ -83,7 +83,7 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
   rclcpp::Publisher<auto_aim_interfaces::msg::Armors>::SharedPtr armors_pub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr cam_info_sub_;
- // std::shared_ptr<image_transport::Subscriber> img_sub_;
+  //std::shared_ptr<image_transport::Subscriber> img_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr img_sub_;
   //rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr img_sub_2;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -95,19 +95,17 @@ private:
   image_transport::Publisher debug_img_pub_;
 
   rclcpp::CallbackGroup::SharedPtr callback_group_img_;
-  rclcpp::CallbackGroup::SharedPtr callback_group_detector_;
 
-
-   
+  // Debug  stats
   size_t img_recv_count_ = 0;
   size_t detect_finish_count_ = 0;
   rclcpp::Time last_stat_time_;
   std::chrono::steady_clock::time_point last_stat_time_steady_;
  
-
+  //Thread-safe
   std::atomic<int> infer_running_count_{0};
-  int max_infer_running_ ; // 可根据实际调整
-   
+  int max_infer_running_ ; 
+  std::mutex callback_mutex_;
 
 
 };

@@ -50,9 +50,9 @@ ArmorDetectorOpenvinoNode::ArmorDetectorOpenvinoNode(const rclcpp::NodeOptions &
   param_desc.integer_range[0].to_value = 1;
   detect_color_ = this->declare_parameter("detect_color", 0, param_desc);
 
-  auto use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", false);
+  auto use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", true);
 
-  camera_name_ = this->declare_parameter("detector.camera_name", "camera");
+  camera_name_ = this->declare_parameter("detector.camera_name", "front_industrial_camera");
   transport_type_ =
     this->declare_parameter("detector.subscribe_compressed", false) ? "compressed" : "raw";
 
@@ -65,7 +65,7 @@ ArmorDetectorOpenvinoNode::ArmorDetectorOpenvinoNode(const rclcpp::NodeOptions &
 
   // Debug mode handler
   RCLCPP_INFO(this->get_logger(), "Setup debug_mode handler");
-  debug_mode_ = this->declare_parameter("debug_mode", false);
+  debug_mode_ = this->declare_parameter("debug_mode", true);
   if (debug_mode_) {
     this->createDebugPublishers();
   }
@@ -143,8 +143,8 @@ void ArmorDetectorOpenvinoNode::initDetector()
   auto pkg_path = ament_index_cpp::get_package_share_directory("armor_detector_openvino");
   auto classify_model_path = pkg_path + "/model/mlp.onnx";
   auto classify_label_path = pkg_path + "/model/label.txt";
-  auto model_path = this->declare_parameter("detector.model_path", "");
-  auto device_type = this->declare_parameter("detector.device_type", "AUTO");
+  auto model_path = this->declare_parameter("detector.model_path", "/home/hy/pb2025_sentry_ws/src/pb2025_rm_vision/armor_detector_openvino/model/opt-1208-001.onnx");
+  auto device_type = this->declare_parameter("detector.device_type", "GPU");
   float conf_threshold = this->declare_parameter("detector.confidence_threshold", 0.25);
   int top_k = this->declare_parameter("detector.top_k", 128);
   float nms_threshold = this->declare_parameter("detector.nms_threshold", 0.3);
@@ -212,7 +212,7 @@ void ArmorDetectorOpenvinoNode::imgCallback(const sensor_msgs::msg::Image::Const
   if (infer_running_count_.load() >= max_infer_running_) {
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, 
       "Infer running too much (%d), dropping frame", infer_running_count_.load());
-    return;
+      return;    
   }
   
   auto timestamp = rclcpp::Time(msg->header.stamp);
@@ -233,7 +233,7 @@ void ArmorDetectorOpenvinoNode::imgCallback(const sensor_msgs::msg::Image::Const
 
 void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
   const std::vector<ArmorObject> & objs, int64_t timestamp_nanosec, const cv::Mat & src_img)
-{
+{ std::lock_guard<std::mutex> lock(callback_mutex_);
   detect_finish_count_++;
   infer_running_count_--;
   
@@ -277,6 +277,7 @@ void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
 
     if (!measure_tool_->calcArmorTarget(obj, target_position, target_rvec, armor_type)) {
       RCLCPP_WARN(this->get_logger(), "Calc target failed.");
+      continue;
     }
 
     cv::Mat rot_mat;
@@ -287,9 +288,7 @@ void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
       rot_mat.at<double>(2, 0), rot_mat.at<double>(2, 1), rot_mat.at<double>(2, 2));
     tf2::Quaternion tf_quaternion;
     tf_rot_mat.getRotation(tf_quaternion);
-    if(obj.confidence <0.5){
-      continue;
-    }
+    
 
     armor.number = K_ARMOR_NAMES[static_cast<int>(obj.number)];
     armor.type = armor_type;
@@ -328,16 +327,14 @@ void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
 
       // Draw armor
    
-      static const int next_indices[] = {2, 3, 0, 2};
+      static const int next_indices[] = {2, 0, 3, 1};
 
-      for (size_t i = 0; i < 4; ++i) {
-          cv::line(debug_img, obj.pts[i], obj.pts[(i + 1) % 4], cv::Scalar(255, 48, 48), 1);
-          if (obj.is_ok) {
-        
-              cv::line(debug_img, obj.pts_binary[i], obj.pts_binary[next_indices[i]], cv::Scalar(0, 255, 0), 1);
-          }
-          
-      }
+    for (size_t i = 0; i < 4; ++i) {
+        cv::line(debug_img, obj.pts[i], obj.pts[(i + 1) % 4], cv::Scalar(255, 48, 48), 1);
+        if (obj.is_ok) {
+            cv::line(debug_img, obj.pts_binary[i], obj.pts_binary[next_indices[i]], cv::Scalar(0, 255, 0), 1);
+        }    
+    }
 
 
       std::string armor_color;

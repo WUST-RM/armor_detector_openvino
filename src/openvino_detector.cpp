@@ -24,6 +24,7 @@
 #include "armor_detector_openvino/detector_openvino.hpp"
 #include "armor_detector_openvino/detector_openvino_node.hpp"
 #include "armor_detector_openvino/ThreadPool.h"
+#include "armor_detector_openvino/light_corner_corrector.hpp"
 
 namespace rm_auto_aim
 {
@@ -281,6 +282,7 @@ void DetectorOpenVino::init()
   strides_ = {8, 16, 32};
   generate_grids_and_stride(INPUT_W, INPUT_H, strides_, grid_strides_);
   thread_pool_ = std::make_unique<ThreadPool>(std::thread::hardware_concurrency(), 100);
+//  
 
 }
 
@@ -362,6 +364,11 @@ void DetectorOpenVino::extractNumberImage(const cv::Mat & src, ArmorObject & arm
   cv::Mat litroi = src(expanded_rect).clone();
   cv::Mat litroi_color = src(expanded_rect).clone();
   cv::cvtColor(litroi, litroi, cv::COLOR_RGB2GRAY);
+
+
+  cv::Mat  litroi_gray = litroi.clone();
+  armor.whole_gray_img = litroi_gray;
+
   cv::threshold(litroi, litroi, binary_thres_, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
 
@@ -403,89 +410,40 @@ void DetectorOpenVino::extractNumberImage(const cv::Mat & src, ArmorObject & arm
   
   
 }
-
-
 std::vector<Light> DetectorOpenVino::findLights(const cv::Mat &rgb_img,
-  const cv::Mat &binary_img, ArmorObject &armor) noexcept {
+  const cv::Mat &binary_img, ArmorObject &armor) noexcept
+{
     using std::vector;
     vector<vector<cv::Point>> contours;
     vector<cv::Vec4i> hierarchy;
-    double zero_x = armor.new_x;
-    double zero_y = armor.new_y;
+
+
     cv::findContours(binary_img, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_NONE);
 
-    vector<Light> lights;
+    vector<Light> all_lights;
 
     for (const auto &contour : contours) {
         if (contour.size() < 6) continue;
 
-        auto light = Light(contour, zero_x, zero_y);
+        auto light = Light(contour);
         if (isLight(light)) {
-            lights.emplace_back(light);
+            all_lights.emplace_back(light);
         }
     }
 
-    std::sort(lights.begin(), lights.end(), [](const Light &l1, const Light &l2) {
+    std::sort(all_lights.begin(), all_lights.end(), [](const Light &l1, const Light &l2) {
         return l1.center.x < l2.center.x;
     });
 
-    armor.pts_binary.clear();
-    std::vector<cv::Point2f> lamp_points;
-    for (const auto& light : lights) {
-        lamp_points.push_back(light.top);
-        lamp_points.push_back(light.bottom);
-    }
+    // 更新 armor 内的信息
+    armor.lights = all_lights;
+    //armor.is_ok = !armor.lights.empty();
 
-    std::vector<cv::Point2f> candidates = lamp_points;
-
-    // 计算装甲板的宽高，用于动态比例阈值
-    double w = cv::norm(armor.pts[0] - armor.pts[1]);
-    double h = cv::norm(armor.pts[0] - armor.pts[3]);
-    double size_scale = w + h;
-
-    std::vector<cv::Point2f> selected_pts(4, cv::Point2f(-1, -1));
-
-    #pragma omp parallel for
-    for (int i = 0; i < 4; ++i) {
-        double min_dist = DBL_MAX;
-        int best_match = -1;
-
-        double test_result = cv::pointPolygonTest(armor.pts, armor.pts[i], false);
-        double dist_threshold = (test_result >= 0) ? (0.15 * size_scale) : (0.25 * size_scale);
-
-        for (size_t j = 0; j < candidates.size(); ++j) {
-            double dist = cv::norm(armor.pts[i] - candidates[j]);
-            if (dist < min_dist) {
-                min_dist = dist;
-                best_match = static_cast<int>(j);
-            }
-        }
-
-        if (best_match != -1 && min_dist < dist_threshold) {
-            selected_pts[i] = candidates[best_match];
-            // 注意：不能直接在并行区 candidates.erase！要最后统一处理
-        }
-    }
-
-    // 后处理：根据 selected_pts 筛掉已经选过的 candidates
-    for (const auto& pt : selected_pts) {
-        if (pt.x >= 0 && pt.y >= 0) {
-            auto it = std::find(candidates.begin(), candidates.end(), pt);
-            if (it != candidates.end()) candidates.erase(it);
-        }
-        armor.pts_binary.push_back(pt);
-    }
-
-    armor.is_ok = true;
-    for (const auto& pt : armor.pts_binary) {
-        if (pt.x < 0 || pt.y < 0) {
-            armor.is_ok = false;
-            break;
-        }
-    }
-
-    return lights;
+    return all_lights;
 }
+
+
+
 bool DetectorOpenVino::isLight(const Light &light) noexcept {
   // The ratio of light (short side / long side)
   float ratio = light.width / light.length;
@@ -501,11 +459,13 @@ bool DetectorOpenVino::isLight(const Light &light) noexcept {
 void DetectorOpenVino::detect(ArmorObject & armor)
 {
   lights_=findLights(armor.whole_rgb_img,armor.whole_binary_img,armor);
-
+  LightCornerCorrector corner_corrector;
+  corner_corrector.correctCorners(armor);
 }
 
 bool DetectorOpenVino::classifyNumber(ArmorObject & armor)
 {
+  static thread_local cv::dnn::Net thread_local_net = number_net_; 
   cv::Mat image = armor.number_img.clone();
 
   // 归一化
@@ -605,6 +565,8 @@ bool DetectorOpenVino::processCallback(
   auto infer_request = compiled_model_->create_infer_request();
   infer_request.set_input_tensor(input_tensor);
   infer_request.infer();
+  // infer_request.start_async();
+  // infer_request.wait();
 
   auto output = infer_request.get_output_tensor();
 

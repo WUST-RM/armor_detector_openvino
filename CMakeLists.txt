@@ -9,6 +9,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+
 ## Export compile commands for clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -40,6 +41,7 @@ ament_auto_add_executable(${PROJECT_NAME}_node
   src/mono_measure_tool.cpp
   src/openvino_detector_node.cpp
   src/openvino_detector.cpp
+  src/light_corner_corrector.cpp
 )
 
 target_include_directories(${PROJECT_NAME}_node PUBLIC ${OpenCV_INCLUDE_DIRS})
