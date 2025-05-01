@@ -87,7 +87,7 @@ public:
   bool isLight(const Light &possible_light) noexcept;
 
   void detect(ArmorObject & armor);
-
+  int detect_color_;
   
 
 private:
@@ -137,6 +137,7 @@ private:
 
 
   std::unique_ptr<ThreadPool> thread_pool_;
+  
 
 
 };

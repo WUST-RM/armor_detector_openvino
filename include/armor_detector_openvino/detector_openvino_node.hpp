@@ -93,6 +93,7 @@ private:
   std::shared_ptr<rclcpp::ParameterEventHandler> debug_param_sub_;
   std::shared_ptr<rclcpp::ParameterCallbackHandle> debug_cb_handle_;
   image_transport::Publisher debug_img_pub_;
+  image_transport::Publisher debug_number_pub_;
 
   rclcpp::CallbackGroup::SharedPtr callback_group_img_;
 

@@ -170,6 +170,8 @@ void ArmorDetectorOpenvinoNode::initDetector()
   detector_ = std::make_unique<DetectorOpenVino>(
     model_path, classify_model_path, classify_label_path, device_type,l_params, conf_threshold, top_k,
     nms_threshold, expand_ratio_w, expand_ratio_h, binary_thres);
+
+  detector_->detect_color_=detect_color_;
   // Set detect callback
   detector_->setCallback(std::bind(
     &ArmorDetectorOpenvinoNode::openvinoDetectCallback, this, std::placeholders::_1,
@@ -216,7 +218,9 @@ void ArmorDetectorOpenvinoNode::imgCallback(const sensor_msgs::msg::Image::Const
   }
   
   auto timestamp = rclcpp::Time(msg->header.stamp);
-  //auto timestamp = this->now();
+  auto now = this->now();
+  //int64_t latency_ns = now.nanoseconds() - timestamp.nanoseconds();
+ // RCLCPP_INFO(this->get_logger(), "Latency: %.1f ms", latency_ns / 1e6);
   frame_id_ = msg->header.frame_id;
   auto img = cv_bridge::toCvCopy(msg, "rgb8")->image;
 
@@ -279,6 +283,10 @@ void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
       RCLCPP_WARN(this->get_logger(), "Calc target failed.");
       continue;
     }
+    debug_number_pub_.publish(cv_bridge::CvImage(armors_msg.header, "mono8", obj.number_img).toImageMsg());
+    // if(obj.confidence ==0)
+    //   continue;
+    
 
     cv::Mat rot_mat;
     cv::Rodrigues(target_rvec, rot_mat);
@@ -385,6 +393,7 @@ void ArmorDetectorOpenvinoNode::openvinoDetectCallback(
       cv::Scalar(0, 255, 255), 2);
 
     debug_img_pub_.publish(cv_bridge::CvImage(armors_msg.header, "rgb8", debug_img).toImageMsg());
+    
   }
   
 }
@@ -416,6 +425,7 @@ void ArmorDetectorOpenvinoNode::publishMarkers(bool is_empty)
 void ArmorDetectorOpenvinoNode::createDebugPublishers()
 {
   debug_img_pub_ = image_transport::create_publisher(this, "detector/debug_img");
+  debug_number_pub_ = image_transport::create_publisher(this,"detector/debug_number");
 }
 
 void ArmorDetectorOpenvinoNode::destroyDebugPublishers() { debug_img_pub_.shutdown(); }
